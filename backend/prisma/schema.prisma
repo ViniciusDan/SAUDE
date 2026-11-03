@@ -1,0 +1,455 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Patient {
+  id             String                  @id @default(cuid())
+  fhirId         String                  @unique
+  cpf            String?                 @unique // CPF do paciente (formato: 11 dígitos)
+  cns            String?                 @unique // Cartão Nacional de Saúde
+  active         Boolean                 @default(true)
+  gender         String?                 // male | female | other | unknown
+  birthDate      DateTime?               @db.Date
+  maritalStatus  String?
+  deceased       Boolean?                @default(false)
+  language       String?                 @default("pt-BR")
+  photo          String?                 // URL da foto
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  identifiers    Identifier[]
+  names          HumanName[]
+  telecoms       ContactPoint[]
+  addresses      Address[]
+  encounters     Encounter[]
+  observations   Observation[]
+  allergies      AllergyIntolerance[]
+  conditions     Condition[]
+  procedures     Procedure[]
+  medications    MedicationStatement[]
+  auditEvents    AuditEvent[]
+  credential     PatientCredential?
+  clinicalDocuments ClinicalDocument[]
+
+  @@index([cpf])
+  @@index([cns])
+}
+
+model Identifier {
+  id              String   @id @default(cuid())
+  use             String?
+  system          String?
+  value           String
+  typeCode        String?
+  typeDisplay     String?
+  assigner        String?
+  resourceType    String
+  createdAt       DateTime @default(now())
+
+  patientId       String?
+  practitionerId  String?
+  organizationId  String?
+  encounterId     String?
+
+  patient         Patient?      @relation(fields: [patientId], references: [id])
+  practitioner    Practitioner? @relation(fields: [practitionerId], references: [id])
+  organization    Organization? @relation(fields: [organizationId], references: [id])
+  encounter       Encounter?    @relation(fields: [encounterId], references: [id])
+
+  @@index([resourceType, value])
+  @@index([system, value])
+}
+
+model HumanName {
+  id         String   @id @default(cuid())
+  use        String?
+  family     String?
+  given      String?
+  text       String?
+  periodStart DateTime? @db.Date
+  periodEnd  DateTime? @db.Date
+  createdAt  DateTime @default(now())
+
+  patientId  String?
+  practitionerId String?
+
+  patient    Patient?      @relation(fields: [patientId], references: [id])
+  practitioner Practitioner? @relation(fields: [practitionerId], references: [id])
+}
+
+model ContactPoint {
+  id            String   @id @default(cuid())
+  system        String?
+  value         String?
+  use           String?
+  rank          Int?
+  periodStart   DateTime? @db.Date
+  periodEnd     DateTime? @db.Date
+  createdAt     DateTime @default(now())
+
+  patientId     String?
+  practitionerId String?
+  organizationId String?
+
+  patient       Patient?      @relation(fields: [patientId], references: [id])
+  practitioner  Practitioner? @relation(fields: [practitionerId], references: [id])
+  organization  Organization? @relation(fields: [organizationId], references: [id])
+}
+
+model Address {
+  id            String   @id @default(cuid())
+  use           String?
+  type          String?
+  text          String?
+  line1         String?
+  line2         String?
+  district      String?
+  city          String?
+  state         String?
+  postalCode    String?
+  country       String?
+  periodStart   DateTime? @db.Date
+  periodEnd     DateTime? @db.Date
+  createdAt     DateTime @default(now())
+
+  patientId     String?
+  organizationId String?
+
+  patient       Patient?      @relation(fields: [patientId], references: [id])
+  organization  Organization? @relation(fields: [organizationId], references: [id])
+}
+
+model Organization {
+  id           String   @id @default(cuid())
+  fhirId       String   @unique
+  cnes         String?  @unique // Código Nacional de Estabelecimento de Saúde
+  name         String
+  alias        String?  // Nome fantasia
+  typeCode     String?  // Tipo de estabelecimento (hospitalar, ambulatorial, etc)
+  typeDisplay  String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  identifiers  Identifier[]
+  telecoms     ContactPoint[]
+  addresses    Address[]
+  encounters   Encounter[]      @relation("OrganizationEncounters")
+  providedCare Encounter[]      @relation("ServiceProviderEncounters")
+
+  @@index([cnes])
+}
+
+model Practitioner {
+  id                String   @id @default(cuid())
+  fhirId            String   @unique
+  cpf               String?  @unique
+  cns               String?  @unique // CNS do profissional
+  active            Boolean  @default(true)
+  gender            String?
+  birthDate         DateTime? @db.Date
+  qualificationCode String?  // CBO (Classificação Brasileira de Ocupações)
+  qualificationText String?
+  councilType       String?  // CRM, CRO, COREN, etc
+  councilNumber     String?  // Número do registro no conselho
+  councilUF         String?  // UF do conselho
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  identifiers  Identifier[]
+  names        HumanName[]
+  telecoms     ContactPoint[]
+  encounters   Encounter[]            @relation("PractitionerEncounters")
+  observations Observation[]          @relation("ObservationPerformer")
+  allergies    AllergyIntolerance[]   @relation("AllergyRecorder")
+  conditions   Condition[]            @relation("ConditionRecorder")
+  procedures   Procedure[]            @relation("ProcedurePerformer")
+  medications  MedicationStatement[]  @relation("MedicationRecorder")
+
+  @@index([cpf])
+  @@index([cns])
+}
+
+model Encounter {
+  id                String    @id @default(cuid())
+  fhirId            String    @unique
+  status            String    // planned | arrived | in-progress | finished | cancelled
+  classCode         String?   // AMB (ambulatorial), EMER (emergência), IMP (internação)
+  classDisplay      String?
+  typeCode          String?   // Tipo de atendimento
+  typeDisplay       String?
+  reasonCode        String?   // Motivo/CID
+  reasonDisplay     String?
+  start             DateTime? @db.Timestamp(6)
+  end               DateTime? @db.Timestamp(6)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  patientId         String
+  organizationId    String?
+  serviceProviderId String?
+  practitionerId    String?
+
+  patient           Patient    @relation(fields: [patientId], references: [id])
+  organization      Organization? @relation("OrganizationEncounters", fields: [organizationId], references: [id])
+  serviceProvider   Organization? @relation("ServiceProviderEncounters", fields: [serviceProviderId], references: [id])
+  practitioner      Practitioner? @relation("PractitionerEncounters", fields: [practitionerId], references: [id])
+
+  identifiers       Identifier[]
+  observations      Observation[]
+  procedures        Procedure[]
+
+  @@index([patientId, start])
+  @@index([status])
+}
+
+model Observation {
+  id                 String    @id @default(cuid())
+  fhirId             String    @unique
+  status             String    // registered | preliminary | final | amended
+  categoryCode       String?   // vital-signs | laboratory | exam | survey
+  categoryDisplay    String?
+  codeSystem         String?   // http://loinc.org ou sistema nacional
+  code               String?   // Código LOINC/TUSS
+  codeDisplay        String?
+  issued             DateTime? @db.Timestamp(6)
+  effectiveDateTime  DateTime? @db.Timestamp(6)
+  valueQuantity      Decimal?  @db.Decimal(12, 4)
+  valueQuantityUnit  String?
+  valueString        String?
+  valueCodeSystem    String?
+  valueCode          String?
+  valueCodeDisplay   String?
+  interpretationCode String?
+  interpretationText String?
+  note               String?   // Comentários/observações
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  patientId          String
+  encounterId        String?
+  performerId        String?
+
+  patient            Patient       @relation(fields: [patientId], references: [id])
+  encounter          Encounter?    @relation(fields: [encounterId], references: [id])
+  performer          Practitioner? @relation("ObservationPerformer", fields: [performerId], references: [id])
+
+  components         ObservationComponent[]
+
+  @@index([patientId, effectiveDateTime])
+  @@index([categoryCode])
+  @@index([code])
+}
+
+model ObservationComponent {
+  id                 String   @id @default(cuid())
+  codeSystem         String?
+  code               String?
+  codeDisplay        String?
+  valueQuantity      Decimal? @db.Decimal(12, 4)
+  valueQuantityUnit  String?
+  valueString        String?
+  valueCodeSystem    String?
+  valueCode          String?
+  valueCodeDisplay   String?
+  observationId      String
+
+  observation        Observation @relation(fields: [observationId], references: [id])
+}
+
+model AllergyIntolerance {
+  id                 String   @id @default(cuid())
+  fhirId             String   @unique
+  clinicalStatusCode String?  // active | inactive | resolved
+  clinicalStatusText String?
+  verificationStatus String?  // unconfirmed | confirmed | refuted | entered-in-error
+  type               String?  // allergy | intolerance
+  category           String?  // food | medication | environment | biologic
+  codeSystem         String?
+  code               String?
+  codeDisplay        String?
+  criticality        String?  // low | high | unable-to-assess
+  recordedDate       DateTime? @db.Timestamp(6)
+  lastOccurrence     DateTime? @db.Timestamp(6)
+  note               String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  source          String? @default("SYSTEM")
+  patientEditable Boolean @default(false)
+
+  patientId          String
+  recorderId         String?
+
+  patient            Patient       @relation(fields: [patientId], references: [id])
+  recorder           Practitioner? @relation("AllergyRecorder", fields: [recorderId], references: [id])
+
+  @@index([patientId])
+  @@index([clinicalStatusCode])
+}
+
+model Condition {
+  id                 String   @id @default(cuid())
+  fhirId             String   @unique
+  clinicalStatus     String?  // active | recurrence | relapse | inactive | remission | resolved
+  verificationStatus String?  // unconfirmed | provisional | differential | confirmed | refuted
+  categoryCode       String?  // problem-list-item | encounter-diagnosis
+  severity           String?  // mild | moderate | severe
+  codeSystem         String?  // CID-10 ou outro
+  code               String?  // Código da condição (ex: CID-10)
+  codeDisplay        String?
+  onsetDateTime      DateTime? @db.Timestamp(6)
+  abatementDateTime  DateTime? @db.Timestamp(6)
+  recordedDate       DateTime? @db.Timestamp(6)
+  note               String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  source          String? @default("SYSTEM")
+  patientEditable Boolean @default(false)
+
+  patientId          String
+  recorderId         String?
+
+  patient            Patient       @relation(fields: [patientId], references: [id])
+  recorder           Practitioner? @relation("ConditionRecorder", fields: [recorderId], references: [id])
+
+
+
+  @@index([patientId])
+  @@index([code])
+  @@index([clinicalStatus])
+}
+
+model Procedure {
+  id                 String   @id @default(cuid())
+  fhirId             String   @unique
+  status             String?  // preparation | in-progress | completed | not-done
+  categoryCode       String?
+  codeSystem         String?  // TUSS, SIGTAP, etc
+  code               String?  // Código do procedimento
+  codeDisplay        String?
+  performedStart     DateTime? @db.Timestamp(6)
+  performedEnd       DateTime? @db.Timestamp(6)
+  note               String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  patientId          String
+  performerId        String?
+  encounterId        String?
+
+  patient            Patient       @relation(fields: [patientId], references: [id])
+  performer          Practitioner? @relation("ProcedurePerformer", fields: [performerId], references: [id])
+  encounter          Encounter?    @relation(fields: [encounterId], references: [id])
+
+  @@index([patientId])
+  @@index([code])
+}
+
+model MedicationStatement {
+  id                 String   @id @default(cuid())
+  fhirId             String   @unique
+  status             String?  // active | completed | entered-in-error | intended | stopped
+  categoryCode       String?  // inpatient | outpatient | community
+  medicationCode     String?  // Código CATMAT ou outro
+  medicationDisplay  String?
+  dosage             String?  // Texto livre da dosagem
+  route              String?  // Via de administração
+  effectiveStart     DateTime? @db.Timestamp(6)
+  effectiveEnd       DateTime? @db.Timestamp(6)
+  taken              String?  // y | n | unk | na
+  note               String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  source          String? @default("SYSTEM")
+  patientEditable Boolean @default(false)
+
+  patientId          String
+  recorderId         String?
+
+  patient            Patient       @relation(fields: [patientId], references: [id])
+  recorder           Practitioner? @relation("MedicationRecorder", fields: [recorderId], references: [id])
+
+
+  @@index([patientId])
+  @@index([status])
+}
+
+model AuditEvent {
+  id            String   @id @default(cuid())
+  action        String
+  outcome       String?
+  recordedAt    DateTime @default(now())
+  agentUserId   String?
+  sourceName    String?
+  patientId     String?
+  details       Json?
+
+  patient       Patient? @relation(fields: [patientId], references: [id])
+}
+
+model PatientCredential {
+  id           String   @id @default(cuid())
+  patientId    String   @unique
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  patient      Patient  @relation(fields: [patientId], references: [id])
+}
+
+model Clinic {
+  id                 String            @id @default(cuid())
+  identifier         String            @unique
+  name               String
+  tradeName          String?
+  cnpj               String?           @unique
+  email              String?
+  phone              String?
+  active             Boolean           @default(true)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  credential         ClinicCredential?
+  clinicalDocuments ClinicalDocument[]
+}
+
+model ClinicCredential {
+  id                 String   @id @default(cuid())
+  clinicId           String   @unique
+  username           String   @unique
+  passwordHash       String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  clinic             Clinic   @relation(fields: [clinicId], references: [id])
+}
+
+model ClinicalDocument {
+  id                 String   @id @default(cuid())
+  patientId          String
+  clinicId           String?
+  title              String
+  documentType       String?
+  description        String?
+  fileName           String
+  filePath           String
+  mimeType           String?
+  source             String   @default("CLINIC_UPLOAD")
+  isVisibleToPatient Boolean  @default(true)
+  uploadedAt         DateTime @default(now())
+  issuedAt           DateTime?
+
+  patient            Patient  @relation(fields: [patientId], references: [id])
+  clinic             Clinic?  @relation(fields: [clinicId], references: [id])
+}
+
+generator erd {
+  provider = "prisma-erd-generator"
+  output   = "../ERD.png"
+}
